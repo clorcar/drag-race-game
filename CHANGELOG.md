@@ -15,6 +15,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- Queens in a group category get a second button next to "A desfilar" on the homepage while the week is on the runway, "A desfilar con mi banda", which shares the band's name, intro and photos like the look; the jury does not see it (DRG-8)
 - On the public runway page, the results of a group category open in a modal from a "Ver resultados" button at the top (instead of showing the table first), the group photos have a "Los grupos" heading, the winning band's photo gets the crown badge like the winning look, and the homepage offers "Ver la pasarela" once the reveal has finished (DRG-8)
 - Group photos on the runway and voting pages show the first photo with a photo counter and open all of them in the look dialog when clicked, like the looks (DRG-8)
 - Group category voting no longer uses the Top 1 queen vote (`category_queen_votes` and `category_queen_result` stay as legacy and are not migrated); the voting screen now asks for complete rankings (DRG-8)

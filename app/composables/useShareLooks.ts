@@ -24,7 +24,7 @@ const MIME_EXTENSIONS: Record<string, string> = {
 
 async function downloadBlob(url: string): Promise<Blob> {
   const response = await fetch(url)
-  if (!response.ok) throw new Error('No se pudo descargar una de las fotos del look.')
+  if (!response.ok) throw new Error('No se pudo descargar una de las fotos.')
   return response.blob()
 }
 

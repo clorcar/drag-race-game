@@ -52,6 +52,10 @@ The stage is gated **in the database**, not only on screen: `runway_results_visi
 
 Bands always need at least one photo for the reveal: a band without one is skipped (a future admin rule will require it).
 
+### Sharing the band ("A desfilar con mi banda")
+
+While the runway is in `runway`, a `concursante` who belongs to a band sees a second button next to "A desfilar" on the homepage. It shares **her own band's** name, intro and photos through the same native share sheet (`useShareLooks`), so she can post it in the WhatsApp group. It is not shown to the jury (judges and special guests) and not to queens without a band. Data: `loadMyGroup` in `app/pages/index.vue` (membership, `category_groups.name/intro` and `category_group_photos`; members always read their own band). With neither intro nor photos there is nothing to share and the button is hidden. Desktop browsers only copy the text.
+
 ### Voting steps
 
 The vote page (`/runways/[id]/vote`) guides voters through the ballots of a group category with a stepper (`.stepper--free` in `_stepper.scss`). Navigation is free (no gating); a step shows a check once its ballot is saved, and the current step lives in the URL (`?paso=2`). The stepper (`VoteStepper.vue`) is shown at the top and, on phones only (below 48rem), repeated under the step so you do not scroll back up.
@@ -62,7 +66,7 @@ The vote page (`/runways/[id]/vote`) guides voters through the ballots of a grou
 | Contestant in a band | 1. Order the rival band (phase 2) · 2. Top 3 of the week |
 | Contestant without a band, or a runway without group categories | Only the Top 3, no stepper |
 
-The jury's Top 3 step is **pre-filled** with the first three queens of their saved ranking (only queens with a look in the runway), unless they already saved a Top 3 or changed the proposal; they can edit it, and "Usar mi orden otra vez" re-applies it. The Top 3 itself is the regular `votes` ballot, unchanged. Only **one group category per runway** is supported by the stepper (the admin is meant to enforce it).
+The jury's Top 3 step is **pre-filled** with the first three queens of their saved ranking (only queens with a look in the runway), unless they already saved a Top 3 or changed the proposal; they can edit it, and "Usar mi orden otra vez" re-applies it. The Top 3 itself is the regular `votes` ballot, unchanged: it is the vote of the week across **all** the categories of the runway, which is why it stays even for the jury (a runway can mix a group category with individual ones, and a judge may want to differ from their band ranking). Only **one group category per runway** is supported by the stepper.
 
 ### Help page
 

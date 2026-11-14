@@ -14,6 +14,12 @@ interface MyLook {
   photos: SharePhoto[]
 }
 
+interface MyGroup {
+  name: string
+  intro: string | null
+  photos: SharePhoto[]
+}
+
 interface HomeData {
   runways: OpenRunway[]
   /** Voting runways where the current participant already cast a ballot */
@@ -26,6 +32,8 @@ interface HomeData {
   jury: JuryMember[]
   /** The signed-in queen's or jury member's own look(s) of the week's runway while it is on the runway (empty otherwise) */
   myLooks: MyLook[]
+  /** The signed-in queen's own group (name, intro, photos) of the week's runway while it is on the runway (null otherwise) */
+  myGroup: MyGroup | null
   /** Most recent closed runway with its winner (null when none has closed yet) */
   previousWeek: { runway: OpenRunway, winner: RunwayQueen | null } | null
 }
@@ -55,17 +63,18 @@ const { data, error, refresh } = await useAsyncData('home', async (): Promise<Ho
   const revealRunway = runways.find(runway => runway.status === 'reveal')
   const revealGroup = revealRunway?.categories.find(category => category.kind === 'group')
   const featured = pickWeekRunway(runways)
-  const [topThree, bands, votedRunwayIds, jury, myLooks, previousWeek] = await Promise.all([
+  const [topThree, bands, votedRunwayIds, jury, myLooks, myGroup, previousWeek] = await Promise.all([
     // The database returns nothing until the jury reveals the Top 3 of a runway with a group category
     revealRunway ? loadTopThree(revealRunway.id) : [],
     revealGroup ? loadBandResult(revealGroup.id) : [],
     loadVotedRunwayIds(runways),
     featured?.status === 'runway' ? loadJury(featured) : [],
     featured?.status === 'runway' ? loadMyLooks(featured) : [],
+    featured?.status === 'runway' ? loadMyGroup(featured) : null,
     loadPreviousWeek(),
   ])
 
-  return { runways, votedRunwayIds, topThree, bands, jury, myLooks, previousWeek }
+  return { runways, votedRunwayIds, topThree, bands, jury, myLooks, myGroup, previousWeek }
 })
 
 async function loadMyLooks(runway: OpenRunway): Promise<MyLook[]> {
@@ -87,6 +96,33 @@ async function loadMyLooks(runway: OpenRunway): Promise<MyLook[]> {
     categoryTitle: titleByCategory.get(row.category_id) ?? '',
     photos: lookPhotos(row),
   }))
+}
+
+// Only queens share their group: the jury (judges and special guests) is not in any group
+async function loadMyGroup(runway: OpenRunway): Promise<MyGroup | null> {
+  const category = runway.categories.find(candidate => candidate.kind === 'group')
+  if (!category || participant.value?.role !== 'concursante') return null
+
+  const { data: member, error: memberError } = await supabase
+    .from('category_group_members')
+    .select('group_id')
+    .eq('category_id', category.id)
+    .eq('participant_id', participant.value.id)
+    .maybeSingle()
+  if (memberError) throw memberError
+  if (!member) return null
+
+  // Members always see their own group's intro and photos
+  const [group, photos] = await Promise.all([
+    supabase.from('category_groups').select('name, intro').eq('id', member.group_id).single(),
+    supabase.from('category_group_photos').select('image_url, image2_url, image3_url, image4_url').eq('group_id', member.group_id).maybeSingle(),
+  ])
+  if (group.error) throw group.error
+  if (photos.error) throw photos.error
+
+  const shared = GROUP_PHOTO_SLOTS.flatMap(slot => (photos.data?.[slot.key] ? [{ url: photos.data[slot.key]!, label: slot.label }] : []))
+  if (!shared.length && !group.data.intro) return null
+  return { name: group.data.name, intro: group.data.intro, photos: shared }
 }
 
 async function loadPreviousWeek(): Promise<HomeData['previousWeek']> {
@@ -213,24 +249,41 @@ const sharePayload = computed(() => ({
     .join('\n\n'),
 }))
 
+// The queen's own group, ready to paste into the WhatsApp group like her look
+const myGroup = computed(() => (weekRunway.value?.status === 'runway' ? data.value?.myGroup ?? null : null))
+const groupSharePayload = computed(() => ({
+  photos: myGroup.value?.photos ?? [],
+  owner: myGroup.value?.name ?? '',
+  text: [myGroup.value ? `*${myGroup.value.name}*` : '', myGroup.value?.intro ?? ''].filter(Boolean).join('\n\n'),
+}))
+
 const { sharing, prefetch, share } = useShareLooks()
 const shareMessage = ref('')
 const shareError = ref('')
 
 // Download the images while the page is idle so the share sheet opens right on tap
-watch(sharePayload, (payload) => {
-  if (import.meta.client) prefetch(payload.photos)
+watch([sharePayload, groupSharePayload], ([look, group]) => {
+  if (import.meta.client) prefetch([...look.photos, ...group.photos])
 }, { immediate: true })
 
-async function shareMyLook() {
+/** Which button is preparing the share sheet, so only that one shows "Preparando…" */
+const sharingTarget = ref<'look' | 'group' | null>(null)
+const shareMyLook = () => runShare(sharePayload.value, 'look')
+const shareMyGroup = () => runShare(groupSharePayload.value, 'group')
+
+async function runShare(payload: typeof sharePayload.value, target: 'look' | 'group') {
   shareMessage.value = ''
   shareError.value = ''
+  sharingTarget.value = target
   try {
-    const result = await share(sharePayload.value)
+    const result = await share(payload)
     if (result === 'copied') shareMessage.value = 'Texto copiado. Tu navegador no permite compartir imágenes desde aquí.'
   }
   catch (error) {
     shareError.value = toErrorMessage(error)
+  }
+  finally {
+    sharingTarget.value = null
   }
 }
 
@@ -340,16 +393,25 @@ function primaryAction(runway: OpenRunway): RunwayAction | null {
         </button>
       </div>
 
-      <!-- Queens and the jury (judges and special guests) share their look in the WhatsApp group once the week is on the runway -->
-      <div v-if="myLooks.length" class="actions">
-        <button type="button" class="btn btn--primary" :disabled="sharing" @click="shareMyLook">
+      <!-- Queens and the jury (judges and special guests) share their look in the WhatsApp group once the week is on the runway; queens also share their group -->
+      <div v-if="myLooks.length || myGroup" class="actions">
+        <button v-if="myLooks.length" type="button" class="btn btn--primary" :disabled="sharing" @click="shareMyLook">
           <svg class="btn__icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <circle cx="18" cy="5" r="3" />
             <circle cx="6" cy="12" r="3" />
             <circle cx="18" cy="19" r="3" />
             <path d="m8.6 13.5 6.8 4M15.4 6.5l-6.8 4" />
           </svg>
-          {{ sharing ? 'Preparando…' : 'A desfilar' }}
+          {{ sharing && sharingTarget === 'look' ? 'Preparando…' : 'A desfilar' }}
+        </button>
+        <button v-if="myGroup" type="button" class="btn btn--secondary" :disabled="sharing" @click="shareMyGroup">
+          <svg class="btn__icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="18" cy="5" r="3" />
+            <circle cx="6" cy="12" r="3" />
+            <circle cx="18" cy="19" r="3" />
+            <path d="m8.6 13.5 6.8 4M15.4 6.5l-6.8 4" />
+          </svg>
+          {{ sharing && sharingTarget === 'group' ? 'Preparando…' : 'A desfilar con mi banda' }}
         </button>
         <p v-if="shareMessage" class="muted" role="status">
           {{ shareMessage }}
